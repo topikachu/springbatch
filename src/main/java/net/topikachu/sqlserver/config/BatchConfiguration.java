@@ -14,6 +14,7 @@ import org.springframework.batch.core.configuration.annotation.StepBuilderFactor
 import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.batch.core.launch.support.SimpleJobLauncher;
+import org.springframework.batch.core.partition.support.TaskExecutorPartitionHandler;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.repository.support.JobRepositoryFactoryBean;
 import org.springframework.batch.item.ExecutionContext;
@@ -90,12 +91,22 @@ public class BatchConfiguration {
         return adapter;
     }
 
+    @Bean
+    @StepScope
+    @Autowired
+    TaskExecutorPartitionHandler get(@Value("#{jobParameters[gridSize] ?: 4}") long gridSize, @Qualifier("step") Step step, TaskExecutor taskExecutor) {
+        TaskExecutorPartitionHandler taskExecutorPartitionHandler = new TaskExecutorPartitionHandler();
+        taskExecutorPartitionHandler.setStep(step);
+        taskExecutorPartitionHandler.setGridSize((int) gridSize);
+        taskExecutorPartitionHandler.setTaskExecutor(taskExecutor);
+        return taskExecutorPartitionHandler;
+
+    }
+
 
     @Bean
     @Autowired
-    public Step master(SqlService sqlService, TaskExecutor taskExecutor, @Qualifier("step") Step step) {
-        //int gridSize=4;
-
+    public Step master(SqlService sqlService, TaskExecutor taskExecutor, TaskExecutorPartitionHandler partitionHandler) {
         return steps.get("master").partitioner("step", gridSize -> {
             List<String> ids = sqlService.partitionIds(gridSize);
             return IntStream.range(0, gridSize)
@@ -121,9 +132,10 @@ public class BatchConfiguration {
                     .collect(Collectors.toMap(Tuple2::v1, Tuple2::v2));
 
         })
-                .gridSize(4)
+                .partitionHandler(partitionHandler)
+
                 .taskExecutor(taskExecutor)
-                .step(step)
+
                 .build();
     }
 
@@ -131,7 +143,7 @@ public class BatchConfiguration {
     @Bean
     @Autowired
     public Job job(@Qualifier("master") Step master) {
-        return jobs.get("job2").start(master).build();
+        return jobs.get("job").start(master).build();
     }
 
     @Bean

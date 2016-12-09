@@ -29,6 +29,7 @@ public class JobService {
     public void run() throws JobParametersInvalidException, JobExecutionAlreadyRunningException, JobRestartException, JobInstanceAlreadyCompleteException {
         JobParameters jobParameters = new JobParametersBuilder()
                 .addDate("start", new Date())
+                //.addLong("gridSize",4l)
                 .toJobParameters();
         jobLauncher.run(job, jobParameters);
     }
