@@ -18,24 +18,16 @@ public class SqlService {
     @Autowired
     private SampleRepository sampleRepository;
 
-    @Transactional
-    public void insert() {
-//        sampleRepository.save(
-//                IntStream.range(0, 1000)
-//                        .mapToObj(i -> new SampleEntity("message " + i))
-//                        .collect(Collectors.toList())
-    }
-
-    ;
 
     @Transactional
-    public List<String> partitionIds(int partitionNumber) {
+    public List<String> partitionIds(int gridSize) {
         long count = sampleRepository.count();
-        long partitionSize = count / partitionNumber;
+        long partitionSize = count / gridSize;
 
         return LongStream.iterate(partitionSize, i -> i + partitionSize)
-                .limit(partitionNumber - 1)
+                .limit(gridSize - 1)
                 .mapToObj(i -> new Tuple2<String, Long>(sampleRepository.findIdAt(i), i))
+                .sorted(((o1, o2) -> o1.v2().compareTo(o2.v2)))
                 .map(t -> t.v1())
                 .collect(Collectors.toList());
 
