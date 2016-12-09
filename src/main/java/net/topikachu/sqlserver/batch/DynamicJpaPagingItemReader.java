@@ -54,8 +54,9 @@ public class DynamicJpaPagingItemReader<T> extends JpaPagingItemReader<T> {
 
     @Override
     public void open(ExecutionContext executionContext) {
-        super.open(executionContext);
         this.executionContext = executionContext;
+        super.open(executionContext);
+
 
     }
 

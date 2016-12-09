@@ -11,6 +11,7 @@ import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.batch.core.launch.support.SimpleJobLauncher;
 import org.springframework.batch.core.repository.JobRepository;
@@ -20,8 +21,10 @@ import org.springframework.batch.item.adapter.ItemProcessorAdapter;
 import org.springframework.batch.item.database.JpaItemWriter;
 import org.springframework.batch.item.database.JpaPagingItemReader;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Scope;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -31,6 +34,8 @@ import javax.sql.DataSource;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+
+import static org.springframework.beans.factory.config.ConfigurableBeanFactory.SCOPE_PROTOTYPE;
 
 /**
  * Created by gongy on 2016/12/9.
@@ -58,6 +63,7 @@ public class BatchConfiguration {
 
     @Bean
     @Autowired
+    @StepScope
     public JpaPagingItemReader reader(EntityManagerFactory emf) {
         DynamicJpaPagingItemReader jpaPagingItemReader = new DynamicJpaPagingItemReader();
         jpaPagingItemReader.setEntityManagerFactory(emf);
@@ -85,36 +91,40 @@ public class BatchConfiguration {
 
     @Bean
     @Autowired
-    public Step master(SqlService sqlService, TaskExecutor taskExecutor) {
+    public Step master(SqlService sqlService, TaskExecutor taskExecutor, @Qualifier("step") Step step) {
         //int gridSize=4;
-        List<String> ids = sqlService.partitionIds(4);
-        return steps.get("master").partitioner("step", gridSize ->
-                IntStream.range(0, gridSize)
-                        .mapToObj(i -> {
-                            String startId = null;
-                            String endId = null;
-                            if (i != 0) {
-                                startId = ids.get(i - 1);
-                            }
-                            if (i != ids.size() - 1) {
-                                endId = ids.get(i);
-                            }
-                            ExecutionContext executionContext = new ExecutionContext();
-                            executionContext.put("startId", startId);
-                            executionContext.put("endId", endId);
-                            return new Tuple2<String, ExecutionContext>("partition-" + i, executionContext);
-                        })
-                        .collect(Collectors.toMap(Tuple2::v1, Tuple2::v2)))
+
+        return steps.get("master").partitioner("step", gridSize -> {
+            List<String> ids = sqlService.partitionIds(gridSize);
+            return IntStream.range(0, gridSize)
+                    .mapToObj(i -> {
+                        String startId = null;
+                        String endId = null;
+                        if (i != 0) {
+                            startId = ids.get(i - 1);
+                        }
+                        if (i != gridSize - 1) {
+                            endId = ids.get(i);
+                        }
+                        ExecutionContext executionContext = new ExecutionContext();
+                        executionContext.put("startId", startId);
+                        executionContext.put("endId", endId);
+                        return new Tuple2<String, ExecutionContext>("partition-" + i, executionContext);
+                    })
+                    .collect(Collectors.toMap(Tuple2::v1, Tuple2::v2));
+
+        })
                 .gridSize(4)
                 .taskExecutor(taskExecutor)
+                .step(step)
                 .build();
     }
 
 
     @Bean
     @Autowired
-    public Job job(Step step) {
-        return jobs.get("job").start(step).build();
+    public Job job(@Qualifier("master") Step master) {
+        return jobs.get("job2").start(master).build();
     }
 
     @Bean

@@ -10,18 +10,20 @@ import org.springframework.batch.core.repository.JobInstanceAlreadyCompleteExcep
 import org.springframework.batch.core.repository.JobRestartException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.stereotype.Component;
 
 import java.util.Date;
 
 /**
  * Created by gongy on 2016/12/9.
  */
+@Component
 public class JobService {
     @Autowired
     JobLauncher jobLauncher;
 
     @Autowired
-    @Qualifier("master")
+    @Qualifier("job")
     Job job;
 
     public void run() throws JobParametersInvalidException, JobExecutionAlreadyRunningException, JobRestartException, JobInstanceAlreadyCompleteException {
