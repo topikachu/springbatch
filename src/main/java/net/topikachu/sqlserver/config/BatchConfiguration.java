@@ -1,9 +1,9 @@
 package net.topikachu.sqlserver.config;
 
-import net.topikachu.sqlserver.batch.DynamicJpaPagingItemReader;
 import net.topikachu.sqlserver.jpa.entity.SampleEntity;
 import net.topikachu.sqlserver.jpa.entity.TargetEntity;
 import net.topikachu.sqlserver.service.MessageProcess;
+import net.topikachu.sqlserver.service.RangedSampleQueryProvider;
 import net.topikachu.sqlserver.service.SqlService;
 import org.jooq.lambda.tuple.Tuple2;
 import org.springframework.batch.core.Job;
@@ -22,9 +22,9 @@ import org.springframework.batch.item.database.JpaItemWriter;
 import org.springframework.batch.item.database.JpaPagingItemReader;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Scope;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -34,8 +34,6 @@ import javax.sql.DataSource;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-
-import static org.springframework.beans.factory.config.ConfigurableBeanFactory.SCOPE_PROTOTYPE;
 
 /**
  * Created by gongy on 2016/12/9.
@@ -64,14 +62,17 @@ public class BatchConfiguration {
     @Bean
     @Autowired
     @StepScope
-    public JpaPagingItemReader reader(EntityManagerFactory emf) {
-        DynamicJpaPagingItemReader jpaPagingItemReader = new DynamicJpaPagingItemReader();
+    public JpaPagingItemReader reader(EntityManagerFactory emf, @Value("#{stepExecutionContext[startId]}") String startId, @Value("#{stepExecutionContext[endId]}") String endId) {
+        JpaPagingItemReader jpaPagingItemReader = new JpaPagingItemReader();
         jpaPagingItemReader.setEntityManagerFactory(emf);
+        RangedSampleQueryProvider rangedSampleQueryProvider = new RangedSampleQueryProvider(startId, endId);
+        jpaPagingItemReader.setQueryProvider(rangedSampleQueryProvider);
         return jpaPagingItemReader;
     }
 
     @Bean
     @Autowired
+    @StepScope
     public JpaItemWriter writer(EntityManagerFactory emf) {
         JpaItemWriter writer = new JpaItemWriter();
         writer.setEntityManagerFactory(emf);
@@ -81,6 +82,7 @@ public class BatchConfiguration {
 
     @Bean
     @Autowired
+    @StepScope
     public ItemProcessorAdapter<SampleEntity, TargetEntity> itemProcessorAdapter(MessageProcess messageProcess) {
         ItemProcessorAdapter<SampleEntity, TargetEntity> adapter = new ItemProcessorAdapter<>();
         adapter.setTargetObject(messageProcess);
@@ -98,14 +100,19 @@ public class BatchConfiguration {
             List<String> ids = sqlService.partitionIds(gridSize);
             return IntStream.range(0, gridSize)
                     .mapToObj(i -> {
-                        String startId = null;
-                        String endId = null;
-                        if (i != 0) {
+                        String startId;
+                        String endId;
+                        if (i == 0) {
+                            startId = null;
+                        } else {
                             startId = ids.get(i - 1);
                         }
-                        if (i != gridSize - 1) {
+                        if (i == gridSize - 1) {
+                            endId = null;
+                        } else {
                             endId = ids.get(i);
                         }
+
                         ExecutionContext executionContext = new ExecutionContext();
                         executionContext.put("startId", startId);
                         executionContext.put("endId", endId);

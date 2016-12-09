@@ -32,7 +32,8 @@ public class SqlService {
     public List<String> partitionIds(int partitionNumber) {
         long count = sampleRepository.count();
         long partitionSize = count / partitionNumber;
-        return LongStream.iterate(0, i -> i + partitionSize)
+
+        return LongStream.iterate(partitionSize, i -> i + partitionSize)
                 .limit(partitionNumber - 1)
                 .mapToObj(i -> new Tuple2<String, Long>(sampleRepository.findIdAt(i), i))
                 .map(t -> t.v1())
