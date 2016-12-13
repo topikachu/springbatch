@@ -1,12 +1,16 @@
 package net.topikachu.sqlserver.config;
 
+import net.topikachu.sqlserver.exception.InvalidDataException;
+import net.topikachu.sqlserver.exception.InvalidRecordBaseException;
 import net.topikachu.sqlserver.jpa.entity.SampleEntity;
 import net.topikachu.sqlserver.jpa.entity.TargetEntity;
 import net.topikachu.sqlserver.service.MessageProcess;
 import net.topikachu.sqlserver.service.RangedSampleQueryProvider;
+import net.topikachu.sqlserver.service.SaveErrorService;
 import net.topikachu.sqlserver.service.SqlService;
 import org.jooq.lambda.tuple.Tuple2;
 import org.springframework.batch.core.Job;
+import org.springframework.batch.core.SkipListener;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
@@ -26,8 +30,8 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import javax.persistence.EntityManagerFactory;
@@ -130,12 +134,9 @@ public class BatchConfiguration {
                         return new Tuple2<String, ExecutionContext>("partition-" + i, executionContext);
                     })
                     .collect(Collectors.toMap(Tuple2::v1, Tuple2::v2));
-
         })
                 .partitionHandler(partitionHandler)
-
                 .taskExecutor(taskExecutor)
-
                 .build();
     }
 
@@ -143,24 +144,50 @@ public class BatchConfiguration {
     @Bean
     @Autowired
     public Job job(@Qualifier("master") Step master) {
-        return jobs.get("job").start(master).build();
+        return jobs.get("job").start(master)
+                .build();
     }
 
     @Bean
     @Autowired
-    public Step step(JpaPagingItemReader<SampleEntity> reader, ItemProcessorAdapter<SampleEntity, TargetEntity> processor, JpaItemWriter<TargetEntity> writer) {
+    public Step step(JpaPagingItemReader<SampleEntity> reader, ItemProcessorAdapter<SampleEntity, TargetEntity> processor, JpaItemWriter<TargetEntity> writer, SaveErrorService saveErrorService) {
         return steps.get("step")
                 .<SampleEntity, TargetEntity>chunk(10)
                 .reader(reader)
                 .processor(processor)
                 .writer(writer)
+                .faultTolerant()
+                .skip(InvalidDataException.class)
+                .skipLimit(Integer.MAX_VALUE)
+                .listener(new SkipListener<SampleEntity, TargetEntity>() {
+                    @Override
+                    public void onSkipInRead(Throwable t) {
+
+                    }
+
+                    @Override
+                    public void onSkipInWrite(TargetEntity item, Throwable t) {
+
+                    }
+
+                    @Override
+                    public void onSkipInProcess(SampleEntity item, Throwable t) {
+                        if (t instanceof InvalidRecordBaseException) {
+                            saveErrorService.saveError((InvalidRecordBaseException) t);
+                        }
+
+                    }
+                })
                 .build();
     }
 
 
     @Bean
-    public SimpleAsyncTaskExecutor taskExecutor() {
-        return new SimpleAsyncTaskExecutor();
+    public TaskExecutor taskExecutor() {
+        ThreadPoolTaskExecutor threadPoolTaskExecutor = new ThreadPoolTaskExecutor();
+        threadPoolTaskExecutor.setCorePoolSize(10);
+
+        return threadPoolTaskExecutor;
     }
 
     @Bean
